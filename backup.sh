@@ -8,4 +8,4 @@ mysqldump --user=wtstaff -p wikitrek --xml > /var/backups/$WeekNRwikitrekorg.xml
 
 tar -cvf /var/backups/$WeekNRwikitrekorg.tar /var/www/wikitrek
 
-gzip $WeekNRwiki*
+gzip /var/backups/$WeekNRwiki*
