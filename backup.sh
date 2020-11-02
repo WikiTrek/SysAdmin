@@ -19,7 +19,6 @@ echo
 echo "TAR misc"
 tar -cf "$BackupDir$WeekNR"apache.tar /etc/apache2/sites-available/
 tar -cf "$BackupDir$WeekNR"encrypt.tar /etc/letsencrypt/live/
-tar -cf "$BackupDir$WeekNR"documents.tar /home/lmauri/documents/
 echo
 echo "TAR WWW"
 tar -cf "$BackupDir$WeekNR"www.tar /var/www/
