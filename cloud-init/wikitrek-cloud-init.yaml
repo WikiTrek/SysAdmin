@@ -1,0 +1,32 @@
+#cloud-config
+timezone: Etc/CET
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - wget
+  - htop
+  - fail2ban
+  - ufw
+  - git
+  - mc  
+  - multitail
+  - gh
+  - imagemagick
+  - net-tools
+  - lnav
+  - goaccess
+  - fail2ban
+  - lynx
+
+users:
+  - name: wikitrek
+    groups: wikitrek
+
+runcmd:
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw enable
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
