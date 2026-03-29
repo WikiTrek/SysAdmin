@@ -1,0 +1,296 @@
+#cloud-config
+# =============================================================================
+# WikiTrek Consolidated Server — cloud-init configuration
+# Hostname: unitedwikitrek
+# Target:   Hetzner CX33 · Ubuntu 26.04 LTS
+# Created:  March 2026
+#
+# What this does:
+#   1. Creates 'lmauri' user with sudo and SSH key (password login disabled)
+#   2. Hardens SSH: disables root login, disables password authentication
+#   3. Sets timezone to CET (Europe/Rome)
+#   4. Sets hostname to unitedwikitrek
+#   5. Creates a 2 GB swap file as OOM safety net
+#   6. Installs base utilities and fail2ban
+#   7. Configures UFW firewall: allows SSH, HTTP, HTTPS only
+#   8. Configures fail2ban for SSH protection
+#   9. Configures journald to cap log storage at 500 MB
+#  10. Configures logrotate for Apache and MariaDB logs
+#  11. Creates web directory structure with lmauri:www-data ownership
+#      (lmauri edits files directly, Apache reads but cannot modify code)
+#
+# Usage on Hetzner:
+#   When creating the CX33 VPS, paste this entire file into the
+#   "Cloud config" (User data) field in the Hetzner Cloud console.
+#   Select Ubuntu 26.04 as the OS image.
+#
+# After first boot:
+#   SSH in with: ssh -i <path-to-unitedwikitrek-private-key> lmauri@<server-ip>
+#   Then proceed to Phase 3 (LAMP stack installation).
+# =============================================================================
+
+# --- Hostname ---
+hostname: unitedwikitrek
+manage_etc_hosts: true
+
+# --- Timezone ---
+timezone: Europe/Rome
+
+# --- User creation ---
+# Creates 'lmauri' (primary admin) and 'lrosa' (backup admin).
+#
+# lmauri: SSH key + password for sudo and Hetzner web console (VNC).
+# lrosa:  SSH key only, passwordless sudo, no console access.
+#         Can take over server administration if lmauri is unavailable.
+#
+# SSH remains key-only for both (password cannot be used for SSH).
+# The 'default' user (usually 'ubuntu') is NOT created.
+users:
+  - name: lmauri
+    groups: sudo, docker
+    sudo: ALL=(ALL) ALL
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: <REPLACE_WITH_LMAURI_PASSWORD_HASH>
+    # Generate with: mkpasswd --method=sha-512
+    # Paste the $6$... output here before using this file on Hetzner
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICtBU0JGH0CjiXPGqIC4/HYo6KloFAgGzHg+GxZ0FpLr lmauri@unitedwikitrek
+
+  - name: lrosa
+    groups: sudo, docker
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAgEAv/vc6xHfe9thxSVfj2vK/bv/Jvx7w84s90Q/xE0mduWOOGeevRqqCj4vozbuLKHn8QZ8ys6rVwlkzqxkPxZXZ2zbbAlOfSEtym1vsw7z2ZtpvJBZthyokJOsDz1/kxnLfJFOxGDIErEgAbGnOr5PmFOE42mD4w2lg33PIFG1kVW2yqYnzEs7y8iqw14Pq3kKt/bgXNgj+qk6+RsODuZhnW7HMixj0cPe6udPyl7DUm3zG6lTGQvDoJ1tw+Xw998CMfU6XgEKyMUDfoeiO+ey4WH0xVQXQxzVH4k6CLVvkMc0b4WGoZ98qTxHXY2z04VIeDxzoe1lJKVyZ/ohfXkCIZlF3ItIECVhngMd90ELgMsEAHIqFxe95HVCKakfEjVvW0F1SWZrW+6L+XQe4t95hNN2JDSfN6Pr0zXp3F5ncZZ1oralib1Um3W14vZPazxVmLIgsF6bW9hERX8yr1Z9UoOwotJMKkRoGWFWDzl6IFdTAGhFTjPP4HftlrQjbCQZ6K9bBt+Uxd3yCX6nyfbAbhOp3nJJREtHR/zpoOpkDZ9I/3F+lUSx+c15GVxExAK4lRgLXaGkhV6jm/wwCrcwSXKlEslpTFRIjolHhf/LagCJYLB7UrzZNh96yGshhk+G4LCmUJu+0HTWrXFToNoz4KsBta6BXLZx61Gf/cRPVgs= vmw7-4096
+
+# --- SSH hardening ---
+ssh_pwauth: false
+disable_root: true
+
+# --- Package installation ---
+package_update: true
+package_upgrade: true
+packages:
+  # Base utilities
+  - mc
+  - htop
+  - multitail
+  - git
+  - gh
+  - lynx
+  - lnav
+  - goaccess
+  - net-tools
+  - curl
+  - wget
+  - unzip
+  - imagemagick
+  # Security
+  - fail2ban
+  - ufw
+  # Monitoring
+  - bpytop
+
+# --- Swap file creation ---
+# 2 GB swap as OOM safety net. The current wikitrek143 has no swap,
+# which caused OOM kills under bot load. This prevents that.
+swap:
+  filename: /swapfile
+  size: 2G
+  maxsize: 2G
+
+# --- System configuration files ---
+write_files:
+  # --- fail2ban SSH jail ---
+  # Protects SSH against brute force. Bans IP for 1 hour after 5 failures.
+  - path: /etc/fail2ban/jail.local
+    content: |
+      [DEFAULT]
+      bantime = 3600
+      findtime = 600
+      maxretry = 5
+      # Whitelist: server self, containertrek (during migration), localhost
+      ignoreip = 127.0.0.1/8 ::1 91.98.45.0 5.75.180.221
+
+      [sshd]
+      enabled = true
+      port = ssh
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = 5
+    owner: root:root
+    permissions: '0644'
+
+  # --- journald size cap ---
+  # Prevents journal from growing unbounded (was 2.9 GB on wikitrek143).
+  # Caps total journal storage at 500 MB.
+  - path: /etc/systemd/journald.conf.d/size-limit.conf
+    content: |
+      [Journal]
+      SystemMaxUse=500M
+      SystemKeepFree=1G
+      MaxRetentionSec=30day
+    owner: root:root
+    permissions: '0644'
+
+  # --- Apache log rotation (prepared for Phase 3) ---
+  # Keeps only 7 days of logs, compresses after 1 day.
+  # Prevents the 13 GB log bloat we saw on wikitrek143.
+  - path: /etc/logrotate.d/apache2-custom
+    content: |
+      /var/log/apache2/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          create 640 root adm
+          sharedscripts
+          postrotate
+              if invoke-rc.d apache2 status > /dev/null 2>&1; then
+                  invoke-rc.d apache2 reload > /dev/null
+              fi
+          endscript
+      }
+    owner: root:root
+    permissions: '0644'
+
+  # --- MariaDB slow query log rotation (prepared for Phase 3) ---
+  # Prevents the 2.1 GB slow query log growth we saw on wikitrek143.
+  - path: /etc/logrotate.d/mariadb-slow
+    content: |
+      /var/log/mysql/mariadb-slow.log {
+          daily
+          missingok
+          rotate 3
+          compress
+          delaycompress
+          notifempty
+          create 660 mysql mysql
+          postrotate
+              # Signal MariaDB to reopen log files without restart
+              if [ -x /usr/bin/mariadb-admin ]; then
+                  /usr/bin/mariadb-admin --defaults-file=/etc/mysql/debian.cnf flush-logs
+              fi
+          endscript
+      }
+    owner: root:root
+    permissions: '0644'
+
+  # --- MediaWiki log rotation (prepared for Phase 3) ---
+  # Prevents the 3.9 GB log bloat we saw on wikitrek143.
+  - path: /etc/logrotate.d/mediawiki
+    content: |
+      /var/log/mediawiki/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          create 640 www-data www-data
+      }
+    owner: root:root
+    permissions: '0644'
+
+  # --- sysctl tuning for a web server ---
+  # Basic network and memory tuning for a busy web server with limited RAM.
+  - path: /etc/sysctl.d/99-wikitrek.conf
+    content: |
+      # Reduce swappiness — prefer keeping processes in RAM,
+      # only swap under real pressure (default is 60)
+      vm.swappiness = 10
+
+      # Increase the number of allowed open files for Apache/MariaDB
+      fs.file-max = 65535
+
+      # TCP tuning for web server with many short-lived connections
+      net.core.somaxconn = 1024
+      net.ipv4.tcp_max_syn_backlog = 1024
+      net.ipv4.tcp_fin_timeout = 15
+      net.ipv4.tcp_tw_reuse = 1
+    owner: root:root
+    permissions: '0644'
+
+# --- Commands to run on first boot ---
+runcmd:
+  # --- UFW firewall setup ---
+  # Allow only SSH, HTTP, HTTPS. Deny everything else.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow OpenSSH
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # --- Enable and start fail2ban ---
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # --- Apply sysctl settings ---
+  - sysctl --system
+
+  # --- Restart journald to pick up size limit ---
+  - systemctl restart systemd-journald
+
+  # --- Create directory structure for web content ---
+  # These will be populated during Phase 3 and Phase 6.
+  #
+  # Ownership model: lmauri:www-data
+  #   - lmauri can read/write all files directly (no user switching)
+  #   - Apache (www-data) can read code but cannot modify it
+  #   - Upload/cache dirs get group-write so Apache can write where needed
+  #
+  # Permission scheme:
+  #   PHP code (extensions, skins, core):  750 (owner rwx, group r-x)
+  #   Images/uploads:                      775 (owner rwx, group rwx)
+  #   Cache/temp:                          owned by www-data:www-data, 750
+  - mkdir -p /var/www/mw/wt
+  - mkdir -p /var/www/mw/dt
+  - mkdir -p /var/www/wp/trek
+  - mkdir -p /var/www/wp/luca
+  - mkdir -p /var/www/anubis-static
+
+  # --- Set ownership: lmauri owns files, www-data group for Apache access ---
+  - chown -R lmauri:www-data /var/www/mw
+  - chown -R lmauri:www-data /var/www/wp
+  - chown -R lmauri:www-data /var/www/anubis-static
+
+  # --- Set default permissions ---
+  # Directories: 750 (owner rwx, group r-x, others none)
+  - find /var/www/mw -type d -exec chmod 750 {} \;
+  - find /var/www/wp -type d -exec chmod 750 {} \;
+  # Files: 640 (owner rw, group r, others none)
+  - find /var/www/mw -type f -exec chmod 640 {} \;
+  - find /var/www/wp -type f -exec chmod 640 {} \;
+
+  # --- Ensure new files inherit the www-data group ---
+  # setgid on directories means any new file/folder created inside
+  # automatically gets the www-data group, even when lmauri creates them.
+  - find /var/www/mw -type d -exec chmod g+s {} \;
+  - find /var/www/wp -type d -exec chmod g+s {} \;
+
+  # --- Prepare scripts directory for lmauri ---
+  - mkdir -p /home/lmauri/scripts
+  - mkdir -p /home/lmauri/documents
+  - chown -R lmauri:lmauri /home/lmauri/scripts
+  - chown -R lmauri:lmauri /home/lmauri/documents
+
+  # --- Create log directories ---
+  # Cron script logs — owned by lmauri since scripts run as lmauri
+  - mkdir -p /var/log/lmauri
+  - chown lmauri:lmauri /var/log/lmauri
+  # MediaWiki logs — owned by www-data since Apache/PHP writes them
+  - mkdir -p /var/log/mediawiki
+  - chown www-data:www-data /var/log/mediawiki
+  - chmod 750 /var/log/mediawiki
+
+# --- Final reboot to ensure all settings take effect ---
+power_state:
+  mode: reboot
+  message: "Cloud-init complete. Rebooting to apply all settings."
+  timeout: 30
+  condition: true
