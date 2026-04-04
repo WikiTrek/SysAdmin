@@ -196,6 +196,17 @@ write_files:
     owner: root:root
     permissions: '0644'
 
+  # --- SSH pre-login banner ---
+  # Downloaded from GitHub so it can be updated without touching cloud-init.
+  # Source: https://github.com/WikiTrek/Grafica/blob/main/banner.txt
+
+  # --- Enable SSH banner in sshd config ---
+  - path: /etc/ssh/sshd_config.d/99-wikitrek-banner.conf
+    content: |
+      Banner /etc/ssh/sshd_banner
+    owner: root:root
+    permissions: '0644'
+
   # --- sysctl tuning for a web server ---
   # Basic network and memory tuning for a busy web server with limited RAM.
   - path: /etc/sysctl.d/99-wikitrek.conf
@@ -217,6 +228,11 @@ write_files:
 
 # --- Commands to run on first boot ---
 runcmd:
+  # --- Download SSH banner from GitHub ---
+  - curl -fsSL https://raw.githubusercontent.com/WikiTrek/Grafica/refs/heads/main/banner.txt -o /etc/ssh/sshd_banner
+  - chmod 644 /etc/ssh/sshd_banner
+  - systemctl restart sshd
+
   # --- UFW firewall setup ---
   # Allow only SSH, HTTP, HTTPS. Deny everything else.
   - ufw default deny incoming
@@ -252,26 +268,36 @@ runcmd:
   - mkdir -p /var/www/mw/dt
   - mkdir -p /var/www/wp/trek
   - mkdir -p /var/www/wp/luca
+  - mkdir -p /var/www/html
+  - mkdir -p /var/www/f3
   - mkdir -p /var/www/anubis-static
 
   # --- Set ownership: lmauri owns files, www-data group for Apache access ---
   - chown -R lmauri:www-data /var/www/mw
   - chown -R lmauri:www-data /var/www/wp
+  - chown -R lmauri:www-data /var/www/html
+  - chown -R lmauri:www-data /var/www/f3
   - chown -R lmauri:www-data /var/www/anubis-static
 
   # --- Set default permissions ---
   # Directories: 750 (owner rwx, group r-x, others none)
   - find /var/www/mw -type d -exec chmod 750 {} \;
   - find /var/www/wp -type d -exec chmod 750 {} \;
+  - find /var/www/html -type d -exec chmod 750 {} \;
+  - find /var/www/f3 -type d -exec chmod 750 {} \;
   # Files: 640 (owner rw, group r, others none)
   - find /var/www/mw -type f -exec chmod 640 {} \;
   - find /var/www/wp -type f -exec chmod 640 {} \;
+  - find /var/www/html -type f -exec chmod 640 {} \;
+  - find /var/www/f3 -type f -exec chmod 640 {} \;
 
   # --- Ensure new files inherit the www-data group ---
   # setgid on directories means any new file/folder created inside
   # automatically gets the www-data group, even when lmauri creates them.
   - find /var/www/mw -type d -exec chmod g+s {} \;
   - find /var/www/wp -type d -exec chmod g+s {} \;
+  - find /var/www/html -type d -exec chmod g+s {} \;
+  - find /var/www/f3 -type d -exec chmod g+s {} \;
 
   # --- Prepare scripts directory for lmauri ---
   - mkdir -p /home/lmauri/scripts
