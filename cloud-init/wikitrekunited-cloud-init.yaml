@@ -87,6 +87,8 @@ packages:
   - wget
   - unzip
   - imagemagick
+  - lazygit
+  - lazydocker
   # Security
   - fail2ban
   - ufw
