@@ -89,6 +89,7 @@ packages:
   - imagemagick
   - lazygit
   - lazydocker
+  - hstr
   # Security
   - fail2ban
   - ufw
