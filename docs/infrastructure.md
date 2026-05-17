@@ -92,26 +92,26 @@ All extensions are licensed under **GPL v2**.
 
 ```
                         ┌─────────────────────────────────────────┐
-                        │              unitedwikitrek              │
-                        │                                          │
+                        │              unitedwikitrek             │
+                        │                                         │
 Internet ──HTTPS──►  Apache :443 (TLS termination)                │
-                        │                                          │
-                        ▼                                          │
-                     Anubis (bot filtering)                        │
-                        │                                          │
-                        ▼                                          │
-                   Apache :8080 (internal)                         │
-                        │                                          │
-               ┌────────┴────────┐                                 │
-               ▼                 ▼                                 │
-         MediaWiki (wt)    MediaWiki (dt)                          │
-         wikitrek.org    data.wikitrek.org                         │
-                                 │                                 │
-                                 ▼                                 │
-                         Docker containers                         │
-                    (WDQS, Elasticsearch, QS)                      │
-                    query.wikitrek.org                             │
-                    qs.wikitrek.org                                │
+                        │                                         │
+                        ▼                                         │
+                     Anubis (bot filtering)                       │
+                        │                                         │
+                        ▼                                         │
+                   Apache :8080 (internal)                        │
+                        │                                         │
+               ┌────────┴────────┐                                │
+               ▼                 ▼                                │
+         MediaWiki (wt)    MediaWiki (dt)                         │
+         wikitrek.org    data.wikitrek.org                        │
+                                 │                                │
+                                 ▼                                │
+                         Docker containers                        │
+                    (WDQS, Elasticsearch, QS)                     │
+                    query.wikitrek.org                            │
+                    qs.wikitrek.org                               │
                         └─────────────────────────────────────────┘
 ```
 
